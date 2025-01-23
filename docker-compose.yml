@@ -1,0 +1,27 @@
+services:
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    container_name: rabbitmq
+    ports:
+      - "15672:15672"   # RabbitMQ management console
+      - "5672:5672"     # RabbitMQ connection
+    mem_limit: 3g
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DISK_FREE_ABSOLUTE_LIMIT: "1GB"
+
+  nestjs-app:
+    build: .
+    container_name: nestjs-app
+    ports:
+      - "3000:3000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+    command: npm run start:dev
