@@ -11,7 +11,7 @@ import { UserModule } from 'src/user/user.module';
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]), // Register Message schema
     RabbitMQModule.forRoot(RabbitMQModule, {
-      uri: 'amqp://127.0.0.1:5672', // RabbitMQ connection URL
+      uri: 'amqp://localhost:5672', // RabbitMQ connection URL
       exchanges: [
         {
           name: 'default',

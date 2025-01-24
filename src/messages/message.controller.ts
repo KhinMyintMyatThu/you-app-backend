@@ -11,10 +11,10 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { MessageService } from './message.service';
-import { UserService } from 'src/user/user.service';
+import { UserService } from '../user/user.service';
 import { MessageDto } from './dto/message.dto';
 import { MessageResponseType } from './types/message-response.type';
-import { ExpressRequest } from 'src/user/middlewares/auth.middleware';
+import { ExpressRequest } from '../user/middlewares/auth.middleware';
 import { ApiHeader, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 @Controller('api') // Base URL

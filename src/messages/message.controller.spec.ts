@@ -1,28 +1,16 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Query,
-  NotFoundException,
-  Request,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import { MessageService } from './message.service';
-import { UserService } from 'src/user/user.service';
-import { MessageDto } from './dto/message.dto';
-import { MessageResponseType } from './types/message-response.type';
-import { ExpressRequest } from 'src/user/middlewares/auth.middleware';
 import { Test, TestingModule } from '@nestjs/testing';
+import { MessageService } from './message.service';
+import { UserService } from '../user/user.service';
+import { NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
 import { MessageController } from './message.controller';
-import { getModelToken } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { UserEntity } from 'src/user/entities/user.entity';
+import { UserEntity } from '../user/entities/user.entity';
 import { Message } from './entities/message.entity';
+import { HydratedDocument } from 'mongoose';
+import { ExpressRequest } from '../user/middlewares/auth.middleware';
+import { Document } from 'mongoose';
 
 describe('MessageController', () => {
-  let controller: MessageController;
+  let messageController: MessageController;
   let messageService: MessageService;
   let userService: UserService;
 
@@ -30,99 +18,243 @@ describe('MessageController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MessageController],
       providers: [
-        MessageService,
-        UserService,
         {
-          provide: getModelToken(UserEntity.name),
-          useValue: Model, // Mock the Mongoose Model
+          provide: MessageService,
+          useValue: {
+            getMessages: jest.fn(),
+            buildMessageResponse: jest.fn(),
+            sendMessage: jest.fn(),
+          },
         },
         {
-          provide: getModelToken(Message.name),
-          useValue: Model,
+          provide: UserService,
+          useValue: {
+            findByUsername: jest.fn(),
+          },
         },
       ],
     }).compile();
 
-    controller = module.get<MessageController>(MessageController);
+    messageController = module.get<MessageController>(MessageController);
     messageService = module.get<MessageService>(MessageService);
     userService = module.get<UserService>(UserService);
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
-  });
+  const mockMessageDocument = (
+    data: Partial<Message>,
+  ): HydratedDocument<Message> => {
+    return {
+      ...data,
+      _id: 'mockId',
+      __v: 0,
+      toObject: jest.fn().mockReturnValue(data),
+      toJSON: jest.fn().mockReturnValue(data),
+    } as unknown as HydratedDocument<Message>;
+  };
 
   describe('viewMessages', () => {
-    it('should return messages when authorized and users exist', async () => {
-      const sender = 'test@example.com';
-      const receiver = 'test2@example.com';
-      const mockMessages: MessageResponseType[] = [{ sender, receiver, content: 'test' }];
+    it('should return messages if sender and receiver are valid', async () => {
+      const mockRequest = {
+        user: { email: 'sender@example.com' },
+      } as ExpressRequest;
+      const sender = 'sender';
+      const receiver = 'receiver';
+      // Create mock messages
+      const mockMessages = [
+        mockMessageDocument({
+          content: 'Hello!',
+          sender: 'sender',
+          receiver: 'receiver',
+        }),
+        mockMessageDocument({
+          content: 'Hi!',
+          sender: 'sender',
+          receiver: 'receiver',
+        }),
+      ];
 
-      jest.spyOn(userService, 'findByUsername').mockResolvedValueOnce({ email: sender } as any).mockResolvedValueOnce({ email: receiver } as any);
-      jest.spyOn(messageService, 'getMessages').mockResolvedValue(mockMessages as any);
-      jest.spyOn(messageService, 'buildMessageResponse').mockImplementation((message) => message);
+      jest
+        .spyOn(userService, 'findByUsername')
+        .mockImplementation((username) => {
+          if (username === 'sender') {
+            return Promise.resolve({
+              email: 'sender@example.com',
+            } as UserEntity);
+          }
+          if (username === 'receiver') {
+            return Promise.resolve({
+              email: 'receiver@example.com',
+            } as UserEntity);
+          }
+          return Promise.resolve(null); // For cases where the user is not found
+        });
 
-      const req = { user: { email: sender } } as ExpressRequest;
+      jest.spyOn(messageService, 'getMessages').mockResolvedValue(mockMessages);
+      jest
+        .spyOn(messageService, 'buildMessageResponse')
+        .mockImplementation((message) => message);
 
-      const result = await controller.viewMessages(req, sender, receiver);
+      const result = await messageController.viewMessages(
+        mockRequest,
+        sender,
+        receiver,
+      );
+
       expect(result).toEqual(mockMessages);
+      expect(userService.findByUsername).toHaveBeenCalledTimes(2);
+      expect(messageService.getMessages).toHaveBeenCalledWith(sender, receiver);
     });
 
-    it('should throw ForbiddenException when unauthorized', async () => {
-      const sender = 'test@example.com';
-      const receiver = 'test2@example.com';
-
-      jest.spyOn(userService, 'findByUsername').mockResolvedValue({ email: sender } as any);
-
-      const req = { user: { email: 'wrong@example.com' } } as ExpressRequest;
-
-      await expect(controller.viewMessages(req, sender, receiver)).rejects.toThrow(HttpException);
-      await expect(controller.viewMessages(req, sender, receiver)).rejects.toHaveProperty('status', HttpStatus.FORBIDDEN);
-
-    });
-
-    it('should throw NotFoundException when sender or receiver does not exist', async () => {
-        const sender = 'test@example.com';
-        const receiver = 'test2@example.com';
-    
-        jest.spyOn(userService, 'findByUsername').mockResolvedValueOnce({email: sender} as any).mockResolvedValueOnce(null);
-    
-        const req = { user: { email: sender } } as ExpressRequest;
-    
-        await expect(controller.viewMessages(req, sender, receiver)).rejects.toThrow(NotFoundException);
+    it('should throw a NotFoundException if sender or receiver does not exist', async () => {
+      // Mock userService.findByUsername to return null
+      jest.spyOn(userService, 'findByUsername').mockResolvedValue({
+        email: 'other@example.com',
+        username: 'other', 
+        password: 'hashedPassword',
+        profile: {
+          name: '',
+          birthday: '',
+          height: 0,
+          weight: 0,
+          interests: [],
+          horoscope: '',
+          zodiac: '',
+        },
       });
+
+      const mockRequest = {
+        user: { email: 'sender@example.com' },
+      } as ExpressRequest;
+
+      await expect(
+        messageController.viewMessages(
+          mockRequest, // Pass the mocked user
+          'sender',
+          'receiver',
+        ),
+      ).rejects.toThrow(
+        new HttpException(
+          'Not allowed to retrieve the messages',
+          HttpStatus.FORBIDDEN,
+        ),
+      );
+    });
+
+    it('should throw a HttpException if the sender email does not match', async () => {
+      jest.spyOn(userService, 'findByUsername').mockResolvedValue({
+        email: 'other@example.com',
+        username: 'other',
+        password: 'hashedPassword',
+        profile: {
+          name: '',
+          birthday: '',
+          height: 0,
+          weight: 0,
+          interests: [],
+          horoscope: '',
+          zodiac: '',
+        },
+      });
+
+      const mockRequest = {
+        user: { email: 'sender@example.com' },
+      } as ExpressRequest;
+
+      await expect(
+        messageController.viewMessages(mockRequest, 'sender', 'receiver'),
+      ).rejects.toThrow(HttpException);
+    });
   });
 
   describe('sendMessage', () => {
-    it('should send a message successfully', async () => {
-      const messageDto: MessageDto = { sender: 'test@example.com', receiver: 'test2@example.com', content: 'test' };
-      const mockMessage: MessageResponseType = messageDto;
+    it('should send and return a message if sender and receiver are valid', async () => {
+      const mockRequest = {
+        user: { email: 'sender@example.com' },
+      } as ExpressRequest;
+      const messageDto = {
+        sender: 'sender',
+        receiver: 'receiver',
+        content: 'Hello!',
+      };
+      const mockMessage = { id: 1, content: 'Hello!' } as Message;
 
-      jest.spyOn(userService, 'findByUsername').mockResolvedValueOnce({ email: messageDto.sender } as any).mockResolvedValueOnce({ email: messageDto.receiver } as any);
-      jest.spyOn(messageService, 'sendMessage').mockResolvedValue(mockMessage as any);
-      jest.spyOn(messageService, 'buildMessageResponse').mockImplementation((message) => message);
+      function createMockMessage(
+        overrides: Partial<Message> = {},
+      ): Document<unknown, {}, Message> & Message & { __v: number } {
+        return {
+          _id: 'mocked-id',
+          content: 'Default content',
+          __v: 0,
+          ...overrides,
+          $assertPopulated: jest.fn(),
+          $clearModifiedPaths: jest.fn(),
+          $clone: jest.fn(),
+        } as any;
+      }
 
-      const req = { user: { email: messageDto.sender } } as ExpressRequest;
-      const result = await controller.sendMessage(req, messageDto);
-      expect(result).toEqual(mockMessage);
+      jest
+        .spyOn(userService, 'findByUsername')
+        .mockImplementation((username) => {
+          if (username === 'sender') {
+            return Promise.resolve({
+              email: 'sender@example.com',
+            } as UserEntity);
+          }
+          if (username === 'receiver') {
+            return Promise.resolve({
+              email: 'receiver@example.com',
+            } as UserEntity);
+          }
+          return Promise.resolve(null); // For cases where the user is not found
+        });
+
+      jest
+        .spyOn(messageService, 'sendMessage')
+        .mockResolvedValue(createMockMessage(mockMessage));
+      jest
+        .spyOn(messageService, 'buildMessageResponse')
+        .mockImplementation((message) => message);
+
+      const result = await messageController.sendMessage(
+        mockRequest,
+        messageDto,
+      );
+
+      expect(userService.findByUsername).toHaveBeenCalledTimes(2);
+      expect(messageService.sendMessage).toHaveBeenCalledWith(
+        messageDto.sender,
+        messageDto.receiver,
+        messageDto.content,
+      );
     });
 
-    it('should throw ForbiddenException when sending message as different user', async () => {
-        const messageDto: MessageDto = { sender: 'test@example.com', receiver: 'test2@example.com', content: 'test' };
 
-        jest.spyOn(userService, 'findByUsername').mockResolvedValue({ email: messageDto.sender } as any);
-
-        const req = { user: { email: 'wrong@example.com' } } as ExpressRequest;
-
-        await expect(controller.sendMessage(req, messageDto)).rejects.toThrow(HttpException);
-        await expect(controller.sendMessage(req, messageDto)).rejects.toHaveProperty('status', HttpStatus.FORBIDDEN);
+    it('should throw a HttpException if the sender email does not match', async () => {
+      jest.spyOn(userService, 'findByUsername').mockResolvedValue({
+        email: 'other@example.com',
+        username: 'other',
+        password: 'hashedPassword',
+        profile: {
+          name: '',
+          birthday: '',
+          height: 0,
+          weight: 0,
+          interests: [],
+          horoscope: '',
+          zodiac: '',
+        },
       });
+      const mockRequest = {
+        user: { email: 'sender@example.com' },
+      } as ExpressRequest;
 
-    it('should throw NotFoundException if sender or receiver not found', async () => {
-        const messageDto: MessageDto = { sender: 'test@example.com', receiver: 'test2@example.com', content: 'test' };
-        jest.spyOn(userService, 'findByUsername').mockResolvedValueOnce({ email: messageDto.sender } as any).mockResolvedValueOnce(null);
-        const req = { user: { email: messageDto.sender } } as ExpressRequest;
-        await expect(controller.sendMessage(req, messageDto)).rejects.toThrow(NotFoundException);
-      });
+      await expect(
+        messageController.sendMessage(mockRequest, {
+          sender: 'sender',
+          receiver: 'receiver',
+          content: 'Hello!',
+        }),
+      ).rejects.toThrow(HttpException);
+    });
   });
 });

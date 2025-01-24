@@ -15,6 +15,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 describe('UserController', () => {
   let controller: UserController;
   let userService: UserService;
+  let userModel: any;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -34,6 +35,7 @@ describe('UserController', () => {
 
     controller = module.get<UserController>(UserController);
     userService = module.get<UserService>(UserService);
+    userModel = module.get(getModelToken(UserEntity.name));
   });
 
   describe('createUser', () => {
@@ -90,7 +92,8 @@ describe('UserController', () => {
         horoscope: '',
         zodiac: '',
       };
-      const mockUser = { email } as UserEntity;
+
+      const mockUser = { email, profile: {} } as UserEntity;
       const mockProfile = { ...profileDto, email };
       const mockResponse = {
         message: 'Profile has been created successfully',
@@ -106,29 +109,33 @@ describe('UserController', () => {
           interests: [],
         },
       };
-
+    
       const req = { user: { email } } as any; // Mocked request with email
-
+    
+      // Mock the userModel.findOne
+      userModel.findOne = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(), // Chainable select method
+        exec: jest.fn().mockResolvedValue(mockUser), // exec method resolving to the mocked user
+      });
+    
       // Focus on the interaction with buildProfileResponse
-      const buildProfileResponseSpy = jest.spyOn(
-        userService,
-        'buildProfileResponse',
-      );
+      const buildProfileResponseSpy = jest.spyOn(userService, 'buildProfileResponse');
       buildProfileResponseSpy.mockReturnValue(mockResponse); // Mock the response function
-
+    
       const result = await controller.getProfile(req);
-
+    
       expect(buildProfileResponseSpy).toHaveBeenCalledWith(
         'Profile has been found successfully',
         expect.objectContaining({
           // Check with partial match
           email: mockProfile.email,
-          name: mockProfile.name
+          profile: {}
         }),
       );
-
+    
       expect(result).toEqual(mockResponse);
     });
+    
   });
 
   describe('getProfile (authorized)', () => {
@@ -151,7 +158,7 @@ describe('UserController', () => {
         },
       };
 
-      const req = { user: { email } } as any; // Mocked request with email
+      const req = { user: { email } } as any;
 
       jest.spyOn(userService, 'getProfile').mockResolvedValue(Promise.resolve(mockProfile));
       jest.spyOn(userService, 'buildProfileResponse')

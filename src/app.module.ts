@@ -12,7 +12,7 @@ import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
     UserModule,
     MongooseModule.forRoot('mongodb://localhost/youappdb'),
     RabbitMQModule.forRoot(RabbitMQModule, {
-      uri: 'amqp://127.0.0.1:5672', // RabbitMQ connection URL
+      uri: 'amqp://localhost:5672', // RabbitMQ connection URL
       exchanges: [
         {
           name: 'default', 

@@ -29,7 +29,6 @@ export class UserController {
   async createUser(
     @Body() createUserDto: CreateUserDto,
   ): Promise<UserResponseType> {
-    console.log('create user dto', createUserDto);
     const user = await this.userService.createUser(createUserDto);
     return this.userService.buildUserResponse(
       'User has been created successfully',
@@ -42,7 +41,6 @@ export class UserController {
   @ApiResponse({ status: 201, description: 'Success' }) // Response details
   @ApiResponse({ status: 422, description: 'User not found or incorrect password' })
   async login(@Body() loginDto: LoginDto): Promise<UserResponseType> {
-    console.log('create user dto', loginDto);
     const user = await this.userService.login(loginDto);
     return this.userService.buildUserResponse(
       'User has been logged in successfully',
